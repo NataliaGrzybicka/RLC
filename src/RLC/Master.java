@@ -1,6 +1,5 @@
 package RLC;
 
-
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
@@ -8,6 +7,8 @@ import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -15,8 +16,10 @@ import javax.swing.*;
 public class Master extends JFrame 
 {
 	public Master(Menu men)
-	{
+	{				
+		exec = Executors.newFixedThreadPool(5);
 		menu = men;
+		middle = new Middle(this);	
 		setSize(1280,700);
 		setMinimumSize(new Dimension(1250,625));
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
@@ -24,6 +27,7 @@ public class Master extends JFrame
 		setLocationRelativeTo(menu);
 		choose = 1;	//domyslnie szeregowy
 		on = false;
+		
 		//***********************************************MENU**************************************************************************
 		
 		menuBar = new JMenuBar();
@@ -38,12 +42,16 @@ public class Master extends JFrame
 		fresh.addActionListener(new ActionListener() 
 		{
 			
+			@SuppressWarnings("deprecation")
 			@Override
 			public void actionPerformed(ActionEvent e) 
 			{
+				threadI.stop();
 				menu.master = new Master(menu); // przywrocenie ustawien poczatkowych obiektu
 				Master.this.setVisible(false); // zamkniecie starego okna
+				Master.this.graphPS.setVisible(false);
 				menu.master.setVisible(true); // wyswietlenie nowego okna w miejsce starego
+				
 			}
 		});
 		menuMenu.add(fresh);
@@ -62,7 +70,7 @@ public class Master extends JFrame
 		menuMenu.add(open);
 		
 		exit = new JMenuItem("Wyjœcie");
-		exit.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, ActionEvent.CTRL_MASK));
+		exit.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_E, ActionEvent.CTRL_MASK));
 		exit.addActionListener(new ActionListener() 
 		{
 			
@@ -87,6 +95,27 @@ public class Master extends JFrame
 		authorItem.addActionListener(authorListener);
 		author.add(authorItem);
 		menuBar.add(author);
+		
+		//************************************************DOLNY*******************************************************************
+				down = new JPanel();
+				down.setBackground(new Color(204, 153, 255));
+				
+				bdGraphPS = new JButton("Wykres przesuniêcia fazowego");
+				bdGraphPS.setBackground(new Color(223,223,223));
+				graphPS = new GraphPS(Master.this);
+				ActionListener graphPSListener = new ActionListener()
+				{
+					@Override
+					public void actionPerformed(ActionEvent arg0) 
+					{
+						
+						graphPS.setVisible(true);
+						
+					}	
+				};
+				bdGraphPS.addActionListener(graphPSListener);
+				
+				down.add(bdGraphPS);
 		
 		//****************************************PRAWY**************************************************************************
 		
@@ -409,36 +438,66 @@ cb7.addActionListener(cb7Listener);
 				} 
 			}
 		};
+				
 cb8.addActionListener(cb8Listener);
 		
+		threadI = new Thread(middle);
+		threadPhi = new Thread(graphPS);
 		brONOFF = new JButton("ON/OFF");
+		runnable = false;
 		ActionListener onOffListener = new ActionListener()
 		{
+			
+			@SuppressWarnings({ "removal", "deprecation" })
 			@Override
 			public void actionPerformed(ActionEvent arg0) //wyswietlenie okieniek dialogowych w przypadku nie optymalnych parametrow
 			{
-				if(fRez<fMin)
-				{
-					JOptionPane.showMessageDialog(Master.this, "Czêstotliwoœæ minimalna jest za du¿a, aby na wykresie zosta³a pokazana czêstotliwoœæ rezonansowa!", "Na wykresie nie pojawi siê czêstotliwoœæ rezonansowa!",JOptionPane.INFORMATION_MESSAGE);
-				}
+															
 				
-				if(fRez>fMax)
+				if(on == false) //wylaczony
 				{
-					JOptionPane.showMessageDialog(Master.this, "Czêstotliwoœæ maksymalna jest za ma³a, aby na wykresie zosta³a pokazana czêstotliwoœæ rezonansowa!", "Na wykresie nie pojawi siê czêstotliwoœæ rezonansowa!",JOptionPane.INFORMATION_MESSAGE);
-				}
-				
-				if(on == false) 
-					{
+						
 					on = true;
-					}
-				else 
+					if(middle.painted==true) //narysowano w pelni wykres
 					{
-					on = false;
+						JOptionPane.showMessageDialog(Master.this, "Wykres zosta³ narysowany. W celu uzyskania nowego wykresu, wybierz Plik - Nowy", "Wykres narysowany",JOptionPane.INFORMATION_MESSAGE);
 					}
+					if(!runnable)
+						{
+						if(fRez<fMin)
+						{
+							JOptionPane.showMessageDialog(Master.this, "Czêstotliwoœæ minimalna jest za du¿a, aby na wykresie zosta³a pokazana czêstotliwoœæ rezonansowa!", "Na wykresie nie pojawi siê czêstotliwoœæ rezonansowa!",JOptionPane.INFORMATION_MESSAGE);
+						}
+						
+						else if(fRez>fMax)
+						{
+							JOptionPane.showMessageDialog(Master.this, "Czêstotliwoœæ maksymalna jest za ma³a, aby na wykresie zosta³a pokazana czêstotliwoœæ rezonansowa!", "Na wykresie nie pojawi siê czêstotliwoœæ rezonansowa!",JOptionPane.INFORMATION_MESSAGE);
+						}
+						threadI.start();
+						threadPhi.start();
+						}
+					else 
+						{
+						threadI.resume();
+						threadPhi.resume();
+						}
+					
+					
+					runnable = true;
+					
+				}
+				else //wlaczony
+				{
+					on = false;	
+					threadI.suspend();
+					threadPhi.suspend();
+				}
+				
 				
 			}	
 		};
 		brONOFF.addActionListener(onOffListener);
+		//exec.execute(middle);
 		brONOFF.setBackground(new Color(223,223,223));
 		
 		pNull1 = new JPanel();
@@ -589,34 +648,14 @@ cb8.addActionListener(cb8Listener);
 		title.setFont(title.getFont().deriveFont(Font.BOLD,28f));
 		top.add(title);
 		
-		//************************************************DOLNY*******************************************************************
-		down = new JPanel();
-		down.setBackground(new Color(204, 153, 255));
 		
-		bdGraphPS = new JButton("Wykres przesuniêcia fazowego");
-		bdGraphPS.setBackground(new Color(223,223,223));
-		ActionListener graphPSListener = new ActionListener()
-		{
-			@Override
-			public void actionPerformed(ActionEvent arg0) 
-			{
-				graphPS = new GraphPS(Master.this);
-				graphPS.setVisible(true);
-				
-			}	
-		};
-		bdGraphPS.addActionListener(graphPSListener);
-		
-		down.add(bdGraphPS);
 
 		//*********************************************SRODKOWY**********************************************************************
-		
 		
 		add(left, BorderLayout.LINE_START);
 		add(right, BorderLayout.LINE_END);
 		add(top, BorderLayout.PAGE_START);
-		add(down, BorderLayout.PAGE_END);
-		middle = new Middle(this);
+		add(down, BorderLayout.PAGE_END);		
 		add(middle, BorderLayout.CENTER);
 	}
 	
@@ -628,6 +667,7 @@ cb8.addActionListener(cb8Listener);
 	    bd = bd.setScale(places, RoundingMode.HALF_UP);		//wyskalowanie stringa
 	    return bd.doubleValue();			//zwrocenie wartosci double przeskalowanego stringa
 	}
+	
 	
 	JPanel left, right, top, down, leftT, leftD, leftM, pNull1, pNull2, pNull3;
 	JLabel title, llResonant, llResultf, lrScheme, lrCircuit, lrGenerator, lrR, lrL, lrC, lrfMin, lrfDelta, lrfMax, lrAmplitude, llPicture;
@@ -643,6 +683,7 @@ cb8.addActionListener(cb8Listener);
 	GraphPS graphPS;
 	Middle middle;
 	Menu menu;
-	boolean on;
-	
+	boolean on, runnable;
+	ExecutorService exec;
+	Thread threadI, threadPhi;
 }
